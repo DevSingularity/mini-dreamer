@@ -1,0 +1,16 @@
+# Managed by deploy/setup-vps.sh — do not edit on the VPS; re-run the script instead.
+# TCP passthrough: redis.${DOMAIN}:6379  ->  127.0.0.1:6380 (dockerized Redis).
+# This is raw Redis protocol (NOT TLS) — clients must AUTH with REDIS_PASSWORD.
+stream {
+    upstream redis_backend {
+        server ${REDIS_UPSTREAM};
+    }
+
+    server {
+        listen 6379;
+        listen [::]:6379;
+        proxy_pass redis_backend;
+        proxy_connect_timeout 5s;
+        proxy_timeout 10m;
+    }
+}

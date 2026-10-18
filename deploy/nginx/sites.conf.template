@@ -1,0 +1,132 @@
+# Managed by deploy/setup-vps.sh — do not edit on the VPS; re-run the script instead.
+# Rendered with envsubst; variables are listed in deploy/setup-vps.sh.
+
+#######################  api.${DOMAIN}  ->  api-server :5000  #######################
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${API_HOST};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://${API_HOST}$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${API_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
+    # Socket.IO runs on its own port inside api-server
+    location /socket.io/ {
+        proxy_pass http://${SOCKET_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;   # keep SSE / long-lived connections open
+    }
+
+    location / {
+        proxy_pass http://${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;        # SSE needs unbuffered responses
+        proxy_read_timeout 3600s;
+    }
+}
+
+#######################  home.${DOMAIN}  ->  frontend :3000  #######################
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${HOME_HOST};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://${HOME_HOST}$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${HOME_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
+    location / {
+        proxy_pass http://${FRONTEND_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+#######################  proxy.${DOMAIN}  ->  reverse-proxy :8000  #######################
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${PROXY_HOST};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://${PROXY_HOST}$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${PROXY_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
+    location / {
+        proxy_pass http://${RP_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+}
+
+#######################  redis.${DOMAIN}  ->  landing page (TCP is on :6379)  #######################
+# The actual Redis protocol endpoint is redis.${DOMAIN}:6379, proxied by the
+# stream block in stream.conf. This HTTP(S) block just explains that.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${REDIS_HOST};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://${REDIS_HOST}$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${REDIS_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
+    location / {
+        default_type text/plain;
+        return 200 "Dreamer Redis endpoint\n\nUse the Redis protocol on port 6379:\n  redis-cli -h ${REDIS_HOST} -p 6379\nThen AUTH with the REDIS_PASSWORD from the server's .env file.\n";
+    }
+}

@@ -1,0 +1,34 @@
+# Redis for Dreamer — the only service containerized on the VPS.
+# The Node apps (api-server, frontend, reverse-proxy) run natively under pm2
+# and are orchestrated by deploy/setup-vps.sh.
+#
+# Configure via the root .env file (see .env.example):
+#   REDIS_PASSWORD   required — used for --requirepass and healthcheck
+#   REDIS_BIND       host interface to bind (default 127.0.0.1 — nginx fronts it)
+#   REDIS_HOST_PORT  host port (default 6380 when nginx stream proxies 6379)
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: dreamer-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env (run: cp .env.example .env)}"
+    ports:
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_HOST_PORT:-6380}:6379"
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:
